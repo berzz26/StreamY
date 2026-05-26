@@ -7,10 +7,12 @@ import (
 	// "time"
 
 	"github.com/berzz26/StreamY/internal/config"
+	"github.com/berzz26/StreamY/internal/upload"
 	// "github.com/berzz26/StreamY/internal/database"
+	"log"
+
 	"github.com/berzz26/StreamY/internal/streaming"
 	"github.com/gofiber/fiber/v2"
-	"log"
 )
 
 func main() {
@@ -32,10 +34,13 @@ func main() {
 	// }
 
 	// fmt.Println(version)
-	
-	app := fiber.New()
 
+	app := fiber.New(fiber.Config{
+		BodyLimit: 1024 * 1024 * 1024, // 1GB
+	})
 	streaming.RegisterRoutes(app)
+	upload.RegisterRoutes(app)
+
 	log.Printf("Api server up on %s", cfg.Port)
 
 	err := app.Listen(":" + cfg.Port)
