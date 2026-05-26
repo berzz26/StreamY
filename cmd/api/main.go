@@ -15,7 +15,7 @@ import (
 
 func main() {
 
-	// cfg := config.LoadDb()
+	cfg := config.LoadConfig()
 	// db := database.New(cfg.DatabaseUrl)
 
 	// defer db.Close()
@@ -36,5 +36,10 @@ func main() {
 	app := fiber.New()
 
 	streaming.RegisterRoutes(app)
-	log.Printf("Api server up on %s")
+	log.Printf("Api server up on %s", cfg.Port)
+
+	err := app.Listen(":" + cfg.Port)
+	if err != nil {
+		panic(err)
+	}
 }
