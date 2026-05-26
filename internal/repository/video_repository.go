@@ -27,7 +27,8 @@ func (r *VideoRepository) CreateVideo(video models.Video) error {
 	id,
 	title,
 	status,
-	original_path
+	original_path,
+	original_size
 	)
 	VALUES ($1,$2,$3,$4,$5)
 	
