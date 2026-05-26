@@ -1,8 +1,10 @@
 package storage
 
 import (
-	"github.com/berzz26/StreamY/internal/config"
+	"context"
+	"log"
 
+	"github.com/berzz26/StreamY/internal/config"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
@@ -24,4 +26,38 @@ func NewMinioClient(cfg config.Config) (*minio.Client, error) {
 	}
 
 	return client, nil
+}
+func UploadFile(
+	client *minio.Client,
+	bucket string,
+	objectName string,
+	filePath string,
+	contentType string,
+) error {
+
+	info, err := client.FPutObject(
+		context.Background(),
+
+		bucket,
+
+		objectName,
+
+		filePath,
+
+		minio.PutObjectOptions{
+			ContentType: contentType,
+		},
+	)
+
+	if err != nil {
+		return err
+	}
+
+	log.Printf(
+		"uploaded %s size %d",
+		info.Key,
+		info.Size,
+	)
+
+	return nil
 }
