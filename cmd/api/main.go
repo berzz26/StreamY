@@ -32,7 +32,7 @@ func main() {
 	// }
 
 	// fmt.Println(version)
-
+	
 	app := fiber.New()
 
 	streaming.RegisterRoutes(app)
@@ -42,4 +42,5 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
 }
