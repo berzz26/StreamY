@@ -3,6 +3,7 @@ package transcoder
 import (
 	"fmt"
 	"os"
+	"strings"
 	"os/exec"
 )
 
@@ -12,8 +13,16 @@ func ProcessVideo(inputPath string, outputDir string) error {
 		return err
 	}
 
-	outputPath := fmt.Sprintf("%s/index.m3u8", outputDir)
+	arr := strings.Split(inputPath, "/")
+	nName := arr[len(arr)-1]
 
+	fileName := strings.Split(nName, ".")[0]
+
+	outputPath := fmt.Sprintf("%s/%s/index.m3u8", outputDir, fileName)
+
+	// fmt.Println("input path : ", inputPath, fileName)
+	// fmt.Println("output path :", outputPath)
+	//execute the command
 	cmd := exec.Command(
 		"ffmpeg",
 		"-i", inputPath,
@@ -38,6 +47,7 @@ func ProcessVideo(inputPath string, outputDir string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	return  cmd.Run()
+	return cmd.Run()
+	// return err
 
 }
