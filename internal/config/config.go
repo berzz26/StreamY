@@ -17,6 +17,7 @@ type Config struct {
 	MinioSecretKey string
 	MinioBucket    string
 	MinioUseSSL    bool
+	HostURL       string
 }
 
 func LoadConfig() *Config {
@@ -32,6 +33,7 @@ func LoadConfig() *Config {
 	minioSecretKey := os.Getenv("MINIO_SECRET_KEY")
 	minioBucket := os.Getenv("MINIO_BUCKET")
 	minioUseSSLStr := os.Getenv("MINIO_USE_SSL")
+	hostUrl := os.Getenv("HOST_URL")
 
 	if dbUrl == "" {
 		log.Fatal("DATABASE_URL is missing")
@@ -39,6 +41,9 @@ func LoadConfig() *Config {
 
 	if port == "" {
 		log.Fatal("PORT is missing")
+	}
+	if hostUrl == "" {
+		log.Fatal("Host_url is missing")
 	}
 
 	if minioEndpoint == "" {
@@ -74,5 +79,6 @@ func LoadConfig() *Config {
 		MinioSecretKey: minioSecretKey,
 		MinioBucket:    minioBucket,
 		MinioUseSSL:    useSSL,
+		HostURL: hostUrl,
 	}
 }

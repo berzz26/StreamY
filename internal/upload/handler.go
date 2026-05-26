@@ -7,6 +7,7 @@ import (
 
 	"github.com/berzz26/StreamY/internal/models"
 	"github.com/berzz26/StreamY/internal/repository"
+	"github.com/berzz26/StreamY/internal/config"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -35,7 +36,7 @@ func (h *Handler) RegisterRoutes(
 func (h *Handler) UploadVideo(
 	c *fiber.Ctx,
 ) error {
-
+	cfg := config.LoadConfig()
 	file, err := c.FormFile("video")
 	if err != nil {
 		return fiber.NewError(
@@ -76,9 +77,10 @@ func (h *Handler) UploadVideo(
 	if err != nil {
 		return err
 	}
-
+	videoUrl := fmt.Sprintf("%s/stream/%s/index.m3u8",cfg.HostURL, videoID)
 	return c.JSON(fiber.Map{
 		"video_id": videoID,
 		"status":   models.StatusUploaded,
+		"url" : videoUrl,
 	})
 }
