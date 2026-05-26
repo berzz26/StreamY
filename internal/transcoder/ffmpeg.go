@@ -3,22 +3,25 @@ package transcoder
 import (
 	"fmt"
 	"os"
-	"strings"
 	"os/exec"
+	"strings"
 )
 
 func ProcessVideo(inputPath string, outputDir string) error {
-	err := os.MkdirAll(outputDir, os.ModePerm) //set perm to the output dir video
-	if err != nil {
-		return err
-	}
-
+	
 	arr := strings.Split(inputPath, "/")
 	nName := arr[len(arr)-1]
 
 	fileName := strings.Split(nName, ".")[0]
 
-	outputPath := fmt.Sprintf("%s/%s/index.m3u8", outputDir, fileName)
+	videoOutputDir := fmt.Sprintf("%s/%s", outputDir, fileName)
+
+	err := os.MkdirAll(videoOutputDir, os.ModePerm)
+	if err != nil {
+		return err
+	}
+
+	outputPath := fmt.Sprintf("%s/index.m3u8", videoOutputDir)
 
 	// fmt.Println("input path : ", inputPath, fileName)
 	// fmt.Println("output path :", outputPath)
