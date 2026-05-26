@@ -113,3 +113,48 @@ func (r *VideoRepository) ClaimNextVideo() (*models.Video, error) {
 
 	return &video, nil
 }
+
+func (r *VideoRepository) UpdateVideoStatus(
+	videoID string,
+	status string,
+) error {
+
+	query := `
+	UPDATE videos
+	SET status = $1,
+		updated_at = NOW()
+	WHERE id = $2
+	`
+
+	_, err := r.db.Exec(
+		context.Background(),
+		query,
+		status,
+		videoID,
+	)
+
+	return err
+}
+func (r *VideoRepository) MarkVideoFailed(
+	videoID string,
+	errorMessage string,
+) error {
+
+	query := `
+	UPDATE videos
+	SET status = $1,
+		error_message = $2,
+		updated_at = NOW()
+	WHERE id = $3
+	`
+
+	_, err := r.db.Exec(
+		context.Background(),
+		query,
+		models.StatusFailed,
+		errorMessage,
+		videoID,
+	)
+
+	return err
+}

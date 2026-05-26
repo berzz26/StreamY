@@ -3,6 +3,8 @@ package storage
 import (
 	"context"
 	"log"
+	"os"
+	"path/filepath"
 
 	"github.com/berzz26/StreamY/internal/config"
 	"github.com/minio/minio-go/v7"
@@ -60,4 +62,76 @@ func UploadFile(
 	)
 
 	return nil
+}
+func UploadDirectory(
+	client *minio.Client,
+	bucket string,
+	localDir string,
+	objectPrefix string,
+) error {
+
+	return filepath.Walk(
+		localDir,
+
+		func(path string, info os.FileInfo, err error) error {
+
+			if err != nil {
+				return err
+			}
+
+			if info.IsDir() {
+				return nil
+			}
+
+			relativePath, err := filepath.Rel(
+				localDir,
+				path,
+			)
+
+			if err != nil {
+				return err
+			}
+
+			objectName := filepath.Join(
+				objectPrefix,
+				relativePath,
+			)
+
+			contentType := "application/octet-stream"
+
+			switch filepath.Ext(path) {
+
+			case ".m3u8":
+				contentType = "application/vnd.apple.mpegurl"
+
+			case ".ts":
+				contentType = "video/mp2t"
+			}
+
+			_, err = client.FPutObject(
+				context.Background(),
+
+				bucket,
+
+				objectName,
+
+				path,
+
+				minio.PutObjectOptions{
+					ContentType: contentType,
+				},
+			)
+
+			if err != nil {
+				return err
+			}
+
+			log.Printf(
+				"uploaded %s",
+				objectName,
+			)
+
+			return nil
+		},
+	)
 }
