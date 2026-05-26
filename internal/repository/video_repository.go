@@ -29,7 +29,7 @@ func (r *VideoRepository) CreateVideo(video models.Video) error {
 	status,
 	original_path
 	)
-	VALUES ($1,$2,$3,$4)
+	VALUES ($1,$2,$3,$4,$5)
 	
 	`
 	_, err := r.db.Exec(
@@ -41,6 +41,7 @@ func (r *VideoRepository) CreateVideo(video models.Video) error {
 		video.Title,
 		video.Status,
 		video.OriginalPath,
+		video.OriginalSize,
 	)
 
 	return err

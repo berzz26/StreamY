@@ -9,6 +9,7 @@ type Video struct {
 	OriginalPath  string
 	ProcessedPath string
 	ErrorMessage  string
+	OriginalSize  int64
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }
