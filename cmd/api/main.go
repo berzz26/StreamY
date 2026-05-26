@@ -6,11 +6,13 @@ import (
 
 	"time"
 
+	"log"
+
 	"github.com/berzz26/StreamY/internal/config"
 	"github.com/berzz26/StreamY/internal/database"
 	"github.com/berzz26/StreamY/internal/repository"
+	"github.com/berzz26/StreamY/internal/storage"
 	"github.com/berzz26/StreamY/internal/upload"
-	"log"
 
 	"github.com/berzz26/StreamY/internal/streaming"
 	"github.com/gofiber/fiber/v2"
@@ -20,6 +22,7 @@ func main() {
 
 	cfg := config.LoadConfig()
 	db := database.New(cfg.DatabaseUrl)
+	client, err := storage.NewMinioClient(*cfg)
 
 	defer db.Close()
 
@@ -28,7 +31,7 @@ func main() {
 
 	var version string
 
-	err := db.DB.QueryRow(ctx, "SELECT version()").Scan(&version)
+	err = db.DB.QueryRow(ctx, "SELECT version()").Scan(&version)
 	if err != nil {
 		panic(err)
 
@@ -51,10 +54,14 @@ func main() {
 			})
 		},
 	})
-	streaming.RegisterRoutes(app)
 
+	streamHandler := streaming.NewHandler(
+		client,
+		cfg.MinioBucket,
+	)
+
+	streamHandler.RegisterRoutes(app)
 	videoRepo := repository.NewVideoRepository(db.DB)
-
 	uploadHandler := upload.NewHandler(videoRepo)
 	uploadHandler.RegisterRoutes(app)
 
