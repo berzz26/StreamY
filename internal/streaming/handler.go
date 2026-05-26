@@ -1,43 +1,92 @@
 package streaming
 
 import (
-	"fmt"
+	"context"
 	"path/filepath"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/minio/minio-go/v7"
 )
 
-func RegisterRoutes(app *fiber.App) {
-	app.Get("/", HealthCheck)
-	app.Get("/stream/:video/*", StreamVideo)
+type Handler struct {
+	minio  *minio.Client
+	bucket string
 }
 
-func HealthCheck(c *fiber.Ctx) error {
-	return c.SendString("Server is up")
+func NewHandler(
+	minioClient *minio.Client,
+	bucket string,
+) *Handler {
+
+	return &Handler{
+		minio:  minioClient,
+		bucket: bucket,
+	}
 }
 
-func StreamVideo(c *fiber.Ctx) error {
+func (h *Handler) RegisterRoutes(
+	app *fiber.App,
+) {
 
-	videoId := c.Params("video")
+	app.Get("/", h.HealthCheck)
+
+	app.Get(
+		"/stream/:video/*",
+		h.StreamVideo,
+	)
+}
+
+func (h *Handler) HealthCheck(
+	c *fiber.Ctx,
+) error {
+
+	return c.SendString("server is up")
+}
+
+func (h *Handler) StreamVideo(
+	c *fiber.Ctx,
+) error {
+
+	videoID := c.Params("video")
+
 	file := c.Params("*")
 
-	fullPath := fmt.Sprintf(
-		"./storage/processed/%s/%s",
-		videoId,
+	objectName := filepath.Join(
+		"processed",
+		videoID,
 		file,
 	)
 
-	ext := filepath.Ext(fullPath)
+	object, err := h.minio.GetObject(
+		context.Background(),
+
+		h.bucket,
+
+		objectName,
+
+		minio.GetObjectOptions{},
+	)
+
+	if err != nil {
+		return err
+	}
+
+	ext := filepath.Ext(file)
 
 	switch ext {
 
 	case ".m3u8":
-		c.Set("Content-Type", "application/vnd.apple.mpegurl")
+		c.Set(
+			"Content-Type",
+			"application/vnd.apple.mpegurl",
+		)
 
 	case ".ts":
-		c.Set("Content-Type", "video/mp2t")
+		c.Set(
+			"Content-Type",
+			"video/mp2t",
+		)
 	}
 
-	// Sends file as stream internally
-	return c.SendFile(fullPath)
+	return c.SendStream(object)
 }

@@ -8,14 +8,16 @@ import (
 	"github.com/berzz26/StreamY/internal/config"
 	"github.com/berzz26/StreamY/internal/database"
 	"github.com/berzz26/StreamY/internal/repository"
+	"github.com/berzz26/StreamY/internal/storage"
 	"github.com/berzz26/StreamY/internal/transcoder"
-	"github.com/minio/minio-go/v7"
+	// "github.com/minio/minio-go/v7"
 )
 
 func main() {
 
 	cfg := config.LoadConfig()
 	db := database.New(cfg.DatabaseUrl)
+	client, err := storage.NewMinioClient(*cfg)
 
 	defer db.Close()
 
@@ -24,22 +26,19 @@ func main() {
 
 	var version string
 
-	err := db.DB.QueryRow(ctx, "SELECT version()").Scan(&version)
+	err = db.DB.QueryRow(ctx, "SELECT version()").Scan(&version)
 	if err != nil {
 		panic(err)
 
 	}
 
 	log.Println(version)
-	if err != nil {
-		panic(err)
-	}
 
 	videoRepo := repository.NewVideoRepository(db.DB)
 
 	worker := transcoder.NewWorker(
 		videoRepo,
-		&minio.Client{},
+		client,
 		cfg.MinioBucket,
 	)
 

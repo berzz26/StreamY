@@ -4,25 +4,25 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
+	// "strings"
 )
 
 func ProcessVideo(inputPath string, outputDir string) error {
-	
-	arr := strings.Split(inputPath, "/")
-	nName := arr[len(arr)-1]
 
-	fileName := strings.Split(nName, ".")[0]
+	// arr := strings.Split(inputPath, "/")
+	// nName := arr[len(arr)-1]
 
-	videoOutputDir := fmt.Sprintf("%s/%s", outputDir, fileName)
+	// fileName := strings.Split(nName, ".")[0]
 
-	err := os.MkdirAll(videoOutputDir, os.ModePerm)
+	err := os.MkdirAll(outputDir, os.ModePerm)
 	if err != nil {
 		return err
 	}
 
-	outputPath := fmt.Sprintf("%s/index.m3u8", videoOutputDir)
-
+	outputPath := fmt.Sprintf(
+		"%s/index.m3u8",
+		outputDir,
+	)
 	// fmt.Println("input path : ", inputPath, fileName)
 	// fmt.Println("output path :", outputPath)
 	//execute the command
