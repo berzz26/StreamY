@@ -59,81 +59,81 @@ func (w *Worker) Start() {
 			video.ID,
 		)
 
-		outputDir := "./processed/" + video.ID
-
-		err = ProcessVideo(
-			video.OriginalPath,
-			outputDir,
-		)
-
-		if err != nil {
-
-			log.Println(err)
-
-			w.repo.MarkVideoFailed(
-				video.ID,
-				err.Error(),
-			)
-
-			continue
-		}
-
-		log.Println("transcoding completed")
-
-		err = storage.UploadDirectory(
-			w.minio,
-
-			w.bucket,
-
-			outputDir,
-
-			"processed/"+video.ID,
-		)
-
-		if err != nil {
-
-			log.Println(err)
-
-			w.repo.MarkVideoFailed(
-				video.ID,
-				err.Error(),
-			)
-
-			continue
-		}
-
-		log.Println("uploaded assets to minio")
-
-		err = w.repo.UpdateVideoStatus(
-			video.ID,
-			models.StatusProcessed,
-		)
-
-		if err != nil {
-
-			log.Println(err)
-
-			continue
-		}
-
-		log.Printf(
-			"video %s processed successfully",
-			video.ID,
-		)
-
-		err = os.Remove(video.OriginalPath)
-		if err != nil {
-			log.Println(err)
-		}
-
-		err = os.RemoveAll(outputDir)
-		if err != nil {
-			log.Println(err)
-		}
-
-		log.Printf(
-			"cleaned temp files for %s",
-			video.ID,
-		)
+		w.processVideo(video)
 	}
+}
+
+func (w *Worker) processVideo(video *models.Video) {
+
+	outputDir := "./processed/" + video.ID
+
+	defer func() {
+		if err := os.Remove(video.OriginalPath); err != nil {
+			log.Printf("cleanup original: %v", err)
+		}
+		if err := os.RemoveAll(outputDir); err != nil {
+			log.Printf("cleanup processed: %v", err)
+		}
+		log.Printf("cleaned temp files for %s", video.ID)
+	}()
+
+	err := ProcessVideo(
+		video.OriginalPath,
+		outputDir,
+	)
+
+	if err != nil {
+
+		log.Println(err)
+
+		w.repo.MarkVideoFailed(
+			video.ID,
+			err.Error(),
+		)
+
+		return
+	}
+
+	log.Println("transcoding completed")
+
+	err = storage.UploadDirectory(
+		w.minio,
+
+		w.bucket,
+
+		outputDir,
+
+		"processed/"+video.ID,
+	)
+
+	if err != nil {
+
+		log.Println(err)
+
+		w.repo.MarkVideoFailed(
+			video.ID,
+			err.Error(),
+		)
+
+		return
+	}
+
+	log.Println("uploaded assets to minio")
+
+	err = w.repo.UpdateVideoStatus(
+		video.ID,
+		models.StatusProcessed,
+	)
+
+	if err != nil {
+
+		log.Println(err)
+
+		return
+	}
+
+	log.Printf(
+		"video %s processed successfully",
+		video.ID,
+	)
 }

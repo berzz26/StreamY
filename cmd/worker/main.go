@@ -18,6 +18,9 @@ func main() {
 	cfg := config.LoadConfig()
 	db := database.New(cfg.DatabaseUrl)
 	client, err := storage.NewMinioClient(*cfg)
+	if err != nil {
+		panic("failed to create minio client: " + err.Error())
+	}
 
 	defer db.Close()
 
