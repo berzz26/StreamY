@@ -23,7 +23,7 @@ func ProcessVideo(inputPath string, outputDir string) error {
 		"-hwaccel", "cuda",
 		"-hwaccel_output_format", "cuda",
 		"-i", inputPath,
-		"-preset", "fast",
+		"-preset", "superfast",
 		"-g", "48",
 		"-sc_threshold", "0",
 
