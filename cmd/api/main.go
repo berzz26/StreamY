@@ -40,7 +40,7 @@ func main() {
 	fmt.Println(version)
 
 	app := fiber.New(fiber.Config{
-		BodyLimit: 1024 * 1024 * 1024,
+		BodyLimit: 3 * 1024 * 1024 * 1024,
 
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
 

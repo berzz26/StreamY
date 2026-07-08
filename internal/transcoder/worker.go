@@ -1,7 +1,6 @@
 package transcoder
 
 import (
-	"log"
 	"os"
 	"time"
 
@@ -10,7 +9,12 @@ import (
 	"github.com/berzz26/StreamY/internal/storage"
 
 	"github.com/minio/minio-go/v7"
+	"github.com/rs/zerolog"
 )
+
+var logger = zerolog.New(
+	zerolog.ConsoleWriter{Out: os.Stderr},
+).With().Timestamp().Logger()
 
 type Worker struct {
 	repo   *repository.VideoRepository
@@ -33,14 +37,14 @@ func NewWorker(
 
 func (w *Worker) Start() {
 
-	log.Println("worker started")
+	logger.Info().Msg("worker started")
 
 	for {
 
 		video, err := w.repo.ClaimNextVideo()
 		if err != nil {
 
-			log.Println(err)
+			logger.Error().Err(err).Msg("failed to claim video")
 
 			time.Sleep(5 * time.Second)
 
@@ -54,10 +58,9 @@ func (w *Worker) Start() {
 			continue
 		}
 
-		log.Printf(
-			"claimed video %s",
-			video.ID,
-		)
+		logger.Info().
+			Str("videoID", video.ID).
+			Msg("claimed video")
 
 		w.processVideo(video)
 	}
@@ -69,22 +72,30 @@ func (w *Worker) processVideo(video *models.Video) {
 
 	defer func() {
 		if err := os.Remove(video.OriginalPath); err != nil {
-			log.Printf("cleanup original: %v", err)
+			logger.Warn().Err(err).Str("videoID", video.ID).Msg("cleanup original failed")
 		}
 		if err := os.RemoveAll(outputDir); err != nil {
-			log.Printf("cleanup processed: %v", err)
+			logger.Warn().Err(err).Str("videoID", video.ID).Msg("cleanup processed failed")
 		}
-		log.Printf("cleaned temp files for %s", video.ID)
+		logger.Info().Str("videoID", video.ID).Msg("cleaned temp files")
 	}()
+
+	start := time.Now()
 
 	err := ProcessVideo(
 		video.OriginalPath,
 		outputDir,
 	)
 
+	transcodeDur := time.Since(start)
+
 	if err != nil {
 
-		log.Println(err)
+		logger.Error().
+			Err(err).
+			Str("videoID", video.ID).
+			Dur("transcode_time", transcodeDur).
+			Msg("transcoding failed")
 
 		w.repo.MarkVideoFailed(
 			video.ID,
@@ -94,7 +105,12 @@ func (w *Worker) processVideo(video *models.Video) {
 		return
 	}
 
-	log.Println("transcoding completed")
+	logger.Info().
+		Str("videoID", video.ID).
+		Dur("transcode_time", transcodeDur).
+		Msg("transcoding completed")
+
+	uploadStart := time.Now()
 
 	err = storage.UploadDirectory(
 		w.minio,
@@ -106,9 +122,15 @@ func (w *Worker) processVideo(video *models.Video) {
 		"processed/"+video.ID,
 	)
 
+	uploadDur := time.Since(uploadStart)
+
 	if err != nil {
 
-		log.Println(err)
+		logger.Error().
+			Err(err).
+			Str("videoID", video.ID).
+			Dur("upload_time", uploadDur).
+			Msg("minio upload failed")
 
 		w.repo.MarkVideoFailed(
 			video.ID,
@@ -118,22 +140,38 @@ func (w *Worker) processVideo(video *models.Video) {
 		return
 	}
 
-	log.Println("uploaded assets to minio")
+	logger.Info().
+		Str("videoID", video.ID).
+		Dur("upload_time", uploadDur).
+		Msg("uploaded assets to minio")
+
+	dbStart := time.Now()
 
 	err = w.repo.UpdateVideoStatus(
 		video.ID,
 		models.StatusProcessed,
 	)
 
+	dbDur := time.Since(dbStart)
+
 	if err != nil {
 
-		log.Println(err)
+		logger.Error().
+			Err(err).
+			Str("videoID", video.ID).
+			Dur("db_time", dbDur).
+			Msg("failed to update status")
 
 		return
 	}
 
-	log.Printf(
-		"video %s processed successfully",
-		video.ID,
-	)
+	totalDur := time.Since(start)
+
+	logger.Info().
+		Str("videoID", video.ID).
+		Dur("transcode_time", transcodeDur).
+		Dur("upload_time", uploadDur).
+		Dur("db_time", dbDur).
+		Dur("total_time", totalDur).
+		Msg("video processed successfully")
 }
