@@ -57,6 +57,20 @@ func (h *Handler) StreamVideo(
 		file,
 	)
 
+	_, err := h.minio.StatObject(
+		context.Background(),
+		h.bucket,
+		objectName,
+		minio.StatObjectOptions{},
+	)
+
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"success": false,
+			"error":   "video not found",
+		})
+	}
+
 	object, err := h.minio.GetObject(
 		context.Background(),
 
