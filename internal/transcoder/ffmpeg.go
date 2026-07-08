@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"time"
+	"log"
 	// "strings"
 )
 
@@ -13,6 +15,8 @@ func ProcessVideo(inputPath string, outputDir string) error {
 	// nName := arr[len(arr)-1]
 
 	// fileName := strings.Split(nName, ".")[0]
+
+	start := time.Now()
 
 	err := os.MkdirAll(outputDir, os.ModePerm)
 	if err != nil {
@@ -28,6 +32,8 @@ func ProcessVideo(inputPath string, outputDir string) error {
 	//execute the command
 	cmd := exec.Command(
 		"ffmpeg",
+		"-hwaccel", "cuda",
+		"-hwaccel_output_format", "cuda",
 		"-i", inputPath,
 		"-preset", "fast",
 		"-g", "48",
@@ -36,7 +42,8 @@ func ProcessVideo(inputPath string, outputDir string) error {
 		"-map", "0:v:0",
 		"-map", "0:a:0",
 
-		"-c:v", "libx264",
+		"-c:v", "h264_nvenc",
+		"-preset", "p5", // p1 fastest, p7 highest quality
 		"-c:a", "aac",
 
 		"-f", "hls",
@@ -47,8 +54,11 @@ func ProcessVideo(inputPath string, outputDir string) error {
 		outputPath,
 	)
 
+	elapsed := time.Since(start)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+
+	log.Printf("Transcoding completed, transcode_time=%s\n", elapsed)
 
 	return cmd.Run()
 	// return err
