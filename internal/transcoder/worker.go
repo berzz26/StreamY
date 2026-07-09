@@ -44,7 +44,7 @@ func (w *Worker) Start() {
 		video, err := w.repo.ClaimNextVideo()
 		if err != nil {
 
-			logger.Error().Err(err).Msg("failed to claim video")
+			logger.Warn().Err(err).Msg("failed to claim video")
 
 			time.Sleep(5 * time.Second)
 
