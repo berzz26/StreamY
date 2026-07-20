@@ -1,6 +1,6 @@
 # StreamY — Project Structure Guide
 ## Demo
-
+https://github.com/user-attachments/assets/4cc859d3-5c14-4a4f-a2ec-352b9c44d009
 ## Overview
 
 StreamY is a backend-focused video streaming platform written in Go.
