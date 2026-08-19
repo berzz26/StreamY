@@ -111,6 +111,7 @@ func (w *Worker) processVideo(video *models.Video) {
 		Msg("transcoding completed")
 
 	uploadStart := time.Now()
+	processedPath := "processed/" + video.ID
 
 	err = storage.UploadDirectory(
 		w.minio,
@@ -119,7 +120,7 @@ func (w *Worker) processVideo(video *models.Video) {
 
 		outputDir,
 
-		"processed/"+video.ID,
+		processedPath,
 	)
 
 	uploadDur := time.Since(uploadStart)
@@ -150,6 +151,7 @@ func (w *Worker) processVideo(video *models.Video) {
 	err = w.repo.UpdateVideoStatus(
 		video.ID,
 		models.StatusProcessed,
+		processedPath,
 	)
 
 	dbDur := time.Since(dbStart)

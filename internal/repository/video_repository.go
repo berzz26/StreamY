@@ -131,19 +131,22 @@ func (r *VideoRepository) ClaimNextVideo() (*models.Video, error) {
 func (r *VideoRepository) UpdateVideoStatus(
 	videoID string,
 	status string,
+	processedPath string,
 ) error {
 
 	query := `
 	UPDATE videos
 	SET status = $1,
-		updated_at = NOW()
-	WHERE id = $2
+		updated_at = NOW(),
+		processed_path = $2
+	WHERE id = $3
 	`
 
 	_, err := r.db.Exec(
 		context.Background(),
 		query,
 		status,
+		processedPath,
 		videoID,
 	)
 
