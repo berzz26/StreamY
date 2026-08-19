@@ -96,7 +96,7 @@ func (r *VideoRepository) ClaimNextVideo() (*models.Video, error) {
 	defer videoMeta.Close()
 
 	duration := videoMeta.Duration()
-	log.Printf("video duration %v",duration)
+	
 
 	updateQuery := `
 	UPDATE videos

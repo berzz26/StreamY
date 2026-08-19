@@ -1,9 +1,12 @@
 package transcoder
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 func ProcessVideo(inputPath string, outputDir string) error {
@@ -28,22 +31,33 @@ func ProcessVideo(inputPath string, outputDir string) error {
 		"-sc_threshold", "0",
 
 		"-map", "0:v:0",
-		"-map", "0:a:0?", //Video may or may not have audio to map. hence it is kept optional
+		"-map", "0:a:0?",
 
 		"-c:v", "h264_nvenc",
 		"-preset", "p5",
 		"-c:a", "aac",
 
 		"-f", "hls",
-
 		"-hls_time", "6",
-
 		"-hls_playlist_type", "vod",
+
 		outputPath,
 	)
 
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	var stderr bytes.Buffer
 
-	return cmd.Run()
+	// Keep showing FFmpeg output in the terminal,
+	// while also capturing it for the returned error.
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
+
+	err = cmd.Run()
+
+	if err != nil {
+		ffmpegErr := strings.TrimSpace(stderr.String())
+
+		return fmt.Errorf("ffmpeg: %s", ffmpegErr)
+	}
+
+	return nil
 }

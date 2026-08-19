@@ -90,7 +90,7 @@ func (w *Worker) processVideo(video *models.Video) {
 	transcodeDur := time.Since(start)
 
 	if err != nil {
-
+		
 		logger.Error().
 			Err(err).
 			Str("videoID", video.ID).
