@@ -28,7 +28,7 @@ func ProcessVideo(inputPath string, outputDir string) error {
 		"-sc_threshold", "0",
 
 		"-map", "0:v:0",
-		"-map", "0:a:0",
+		"-map", "0:a:0?", //Video may or may not have audio to map. hence it is kept optional
 
 		"-c:v", "h264_nvenc",
 		"-preset", "p5",
