@@ -26,6 +26,7 @@ func NewMinioClient(cfg config.Config) (*minio.Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("Connected to Minio")
 
 	return client, nil
 }

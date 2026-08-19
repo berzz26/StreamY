@@ -5,6 +5,8 @@ import (
 
 	"github.com/berzz26/StreamY/internal/models"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"log"
+	"github.com/AlexEidt/Vidio"
 )
 
 type VideoRepository struct {
@@ -86,17 +88,29 @@ func (r *VideoRepository) ClaimNextVideo() (*models.Video, error) {
 		return nil, err
 	}
 
+	videoMeta, err := vidio.NewVideo(video.OriginalPath)
+	if err != nil {
+		log.Println("Error getting duration:", err)
+
+	}
+	defer videoMeta.Close()
+
+	duration := videoMeta.Duration()
+	log.Printf("video duration %v",duration)
+
 	updateQuery := `
 	UPDATE videos
 	SET status = $1,
-		updated_at = NOW()
-	WHERE id = $2
+		updated_at = NOW(),
+	 	duration_seconds = $2
+	WHERE id = $3
 	`
 
 	_, err = tx.Exec(
 		context.Background(),
 		updateQuery,
 		models.StatusProcessing,
+		duration,
 		video.ID,
 	)
 

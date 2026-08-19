@@ -3,6 +3,7 @@ module github.com/berzz26/StreamY
 go 1.25.0
 
 require (
+	github.com/AlexEidt/Vidio v1.5.1 // indirect
 	github.com/andybalholm/brotli v1.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
