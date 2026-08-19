@@ -3,10 +3,11 @@ package repository
 import (
 	"context"
 
+	"log"
+
+	"github.com/AlexEidt/Vidio"
 	"github.com/berzz26/StreamY/internal/models"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"log"
-	"github.com/AlexEidt/Vidio"
 )
 
 type VideoRepository struct {
@@ -96,7 +97,6 @@ func (r *VideoRepository) ClaimNextVideo() (*models.Video, error) {
 	defer videoMeta.Close()
 
 	duration := videoMeta.Duration()
-	
 
 	updateQuery := `
 	UPDATE videos
@@ -171,6 +171,86 @@ func (r *VideoRepository) MarkVideoFailed(
 		models.StatusFailed,
 		errorMessage,
 		videoID,
+	)
+
+	return err
+}
+
+func (r *VideoRepository) CreateVideoProbe(probe *models.VideoProbe) error {
+	query := `
+        INSERT INTO video_probe (
+			id,
+            video_id,
+            format_name,
+            format_long_name,
+            format_bitrate,
+            format_duration,
+            video_codec,
+            video_codec_long_name,
+            video_profile,
+            video_level,
+            width,
+            height,
+            video_bitrate,
+            frame_rate_num,
+            frame_rate_den,
+            pixel_format,
+            color_space,
+            color_transfer,
+            color_primaries,
+            sample_aspect_ratio,
+            display_aspect_ratio,
+            audio_codec,
+            audio_codec_long_name,
+            audio_bitrate,
+            audio_sample_rate,
+            audio_channels,
+            audio_channel_layout,
+            probed_at,
+            created_at
+        )
+        VALUES (
+			$1, $2, $3, $4, $5, $6,
+			$7, $8, $9, $10, $11,
+			$12, $13, $14, $15, $16,
+			$17, $18, $19, $20, $21,
+			$22, $23, $24, $25, $26,
+			$27, $28, $29
+        )
+    `
+
+	_, err := r.db.Exec(
+		context.Background(),
+		query,
+		probe.ID,
+		probe.VideoID,
+		probe.FormatName,
+		probe.FormatLongName,
+		probe.FormatBitrate,
+		probe.FormatDuration,
+		probe.VideoCodec,
+		probe.VideoCodecLongName,
+		probe.VideoProfile,
+		probe.VideoLevel,
+		probe.Width,
+		probe.Height,
+		probe.VideoBitrate,
+		probe.FrameRateNum,
+		probe.FrameRateDen,
+		probe.PixelFormat,
+		probe.ColorSpace,
+		probe.ColorTransfer,
+		probe.ColorPrimaries,
+		probe.SampleAspectRatio,
+		probe.DisplayAspectRatio,
+		probe.AudioCodec,
+		probe.AudioCodecLongName,
+		probe.AudioBitrate,
+		probe.AudioSampleRate,
+		probe.AudioChannels,
+		probe.AudioChannelLayout,
+		probe.ProbedAt,
+		probe.CreatedAt,
 	)
 
 	return err

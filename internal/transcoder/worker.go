@@ -80,9 +80,41 @@ func (w *Worker) processVideo(video *models.Video) {
 		logger.Info().Str("videoID", video.ID).Msg("cleaned temp files")
 	}()
 
+	probe, err := ProbeVideo(video.OriginalPath)
+
+	if err != nil {
+		logger.Error().
+			Err(err).
+			Str("videoID", video.ID).
+			Msg("video probing failed")
+
+		w.repo.MarkVideoFailed(
+			video.ID,
+			err.Error(),
+		)
+
+		return
+	}
+
+	probe.VideoID = video.ID
+
+	if err := w.repo.CreateVideoProbe(probe); err != nil {
+		logger.Error().
+			Err(err).
+			Str("videoID", video.ID).
+			Msg("failed to save video probe")
+
+		w.repo.MarkVideoFailed(
+			video.ID,
+			err.Error(),
+		)
+
+		return
+	}
+
 	start := time.Now()
 
-	err := ProcessVideo(
+	err = ProcessVideo(
 		video.OriginalPath,
 		outputDir,
 	)
