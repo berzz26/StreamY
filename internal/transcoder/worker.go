@@ -117,6 +117,15 @@ func (w *Worker) processVideo(video *models.Video) {
 		return
 	}
 
+	if probe.FormatDuration != nil {
+		if err := w.repo.UpdateVideoDuration(video.ID, *probe.FormatDuration); err != nil {
+			logger.Error().
+				Err(err).
+				Str("videoID", video.ID).
+				Msg("failed to update video duration from probe")
+		}
+	}
+
 	start := time.Now()
 
 	err = ProcessVideo(

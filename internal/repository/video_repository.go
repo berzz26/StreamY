@@ -3,9 +3,6 @@ package repository
 import (
 	"context"
 
-	"log"
-
-	"github.com/AlexEidt/Vidio"
 	"github.com/berzz26/StreamY/internal/models"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -89,28 +86,17 @@ func (r *VideoRepository) ClaimNextVideo() (*models.Video, error) {
 		return nil, err
 	}
 
-	videoMeta, err := vidio.NewVideo(video.OriginalPath)
-	if err != nil {
-		log.Println("Error getting duration:", err)
-
-	}
-	defer videoMeta.Close()
-
-	duration := videoMeta.Duration()
-
 	updateQuery := `
 	UPDATE videos
 	SET status = $1,
-		updated_at = NOW(),
-	 	duration_seconds = $2
-	WHERE id = $3
+		updated_at = NOW()
+	WHERE id = $2
 	`
 
 	_, err = tx.Exec(
 		context.Background(),
 		updateQuery,
 		models.StatusProcessing,
-		duration,
 		video.ID,
 	)
 
@@ -251,6 +237,24 @@ func (r *VideoRepository) CreateVideoProbe(probe *models.VideoProbe) error {
 		probe.AudioChannelLayout,
 		probe.ProbedAt,
 		probe.CreatedAt,
+	)
+
+	return err
+}
+
+func (r *VideoRepository) UpdateVideoDuration(videoID string, duration float64) error {
+	query := `
+	UPDATE videos
+	SET duration_seconds = $1,
+		updated_at = NOW()
+	WHERE id = $2
+	`
+
+	_, err := r.db.Exec(
+		context.Background(),
+		query,
+		duration,
+		videoID,
 	)
 
 	return err
