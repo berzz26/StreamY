@@ -1,6 +1,7 @@
 package transcoder
 
 import (
+	"fmt"
 	"os"
 	"time"
 
@@ -81,8 +82,11 @@ func (w *Worker) processVideo(video *models.Video) {
 	}()
 
 	probe, err := ProbeVideo(video.OriginalPath)
-	
-	
+
+	renditions := PlanRenditions(probe)
+
+	fmt.Print(renditions)
+
 	if err != nil {
 		logger.Error().
 			Err(err).
@@ -123,7 +127,7 @@ func (w *Worker) processVideo(video *models.Video) {
 	transcodeDur := time.Since(start)
 
 	if err != nil {
-		
+
 		logger.Error().
 			Err(err).
 			Str("videoID", video.ID).

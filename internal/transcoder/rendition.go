@@ -17,13 +17,13 @@ var resolutionLadder = []int{
 }
 
 var bitrateLadder = map[int]int{
-	2160: 12000,
-	1440: 8000,
-	1080: 5000,
-	720:  2500,
-	480:  1000,
-	360:  600,
-	240:  400,
+	2160: 12000000,
+	1440: 8000000,
+	1080: 5000000,
+	720:  2500000,
+	480:  1000000,
+	360:  600000,
+	240:  400000,
 }
 
 func PlanRenditions(
@@ -64,6 +64,7 @@ func PlanRenditions(
 		}
 
 		renditions = append(renditions, rendition)
+		
 	}
 
 	return renditions
