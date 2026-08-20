@@ -81,7 +81,8 @@ func (w *Worker) processVideo(video *models.Video) {
 	}()
 
 	probe, err := ProbeVideo(video.OriginalPath)
-
+	
+	
 	if err != nil {
 		logger.Error().
 			Err(err).
