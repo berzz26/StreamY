@@ -128,10 +128,26 @@ func (w *Worker) processVideo(video *models.Video) {
 
 	start := time.Now()
 
-	err = ProcessVideo(
-		video.OriginalPath,
-		outputDir,
-	)
+	// err = ProcessVideo(
+	// 	video.OriginalPath,
+	// 	outputDir,
+	// )
+
+	for i := range renditions {
+		err = EncodeRendition(
+			&renditions[i],
+			outputDir,
+			video.OriginalPath,
+		)
+
+		if err != nil {
+			logger.Error().
+				Err(err).
+				Str("videoID", video.ID).
+				Msg("failed to encode rendition")
+			return
+		}
+	}
 
 	transcodeDur := time.Since(start)
 
