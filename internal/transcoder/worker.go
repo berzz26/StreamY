@@ -3,6 +3,7 @@ package transcoder
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/berzz26/StreamY/internal/models"
@@ -83,10 +84,6 @@ func (w *Worker) processVideo(video *models.Video) {
 
 	probe, err := ProbeVideo(video.OriginalPath)
 
-	renditions := PlanRenditions(probe)
-
-	fmt.Print(renditions)
-
 	if err != nil {
 		logger.Error().
 			Err(err).
@@ -97,34 +94,17 @@ func (w *Worker) processVideo(video *models.Video) {
 			video.ID,
 			err.Error(),
 		)
-
 		return
 	}
 
 	probe.VideoID = video.ID
 
-	if err := w.repo.CreateVideoProbe(probe); err != nil {
-		logger.Error().
-			Err(err).
-			Str("videoID", video.ID).
-			Msg("failed to save video probe")
+	renditions := PlanRenditions(probe)
 
-		w.repo.MarkVideoFailed(
-			video.ID,
-			err.Error(),
-		)
-
-		return
-	}
-
-	if probe.FormatDuration != nil {
-		if err := w.repo.UpdateVideoDuration(video.ID, *probe.FormatDuration); err != nil {
-			logger.Error().
-				Err(err).
-				Str("videoID", video.ID).
-				Msg("failed to update video duration from probe")
-		}
-	}
+	logger.Info().
+		Str("videoID", video.ID).
+		Int("renditions", len(renditions)).
+		Msg("planned renditions")
 
 	start := time.Now()
 
@@ -144,12 +124,29 @@ func (w *Worker) processVideo(video *models.Video) {
 			logger.Error().
 				Err(err).
 				Str("videoID", video.ID).
-				Msg("failed to encode rendition")
+				Msg("transcoding failed")
+
+			w.repo.MarkVideoFailed(
+				video.ID,
+				err.Error(),
+			)
 			return
 		}
 	}
 
 	transcodeDur := time.Since(start)
+	if err := CreateMasterPlaylist(renditions, outputDir); err != nil {
+		logger.Error().
+			Err(err).
+			Str("videoID", video.ID).
+			Msg("failed to create master playlist")
+
+		w.repo.MarkVideoFailed(
+			video.ID,
+			err.Error(),
+		)
+		return
+	}
 
 	if err != nil {
 
@@ -238,4 +235,39 @@ func (w *Worker) processVideo(video *models.Video) {
 		Dur("db_time", dbDur).
 		Dur("total_time", totalDur).
 		Msg("video processed successfully")
+}
+
+func CreateMasterPlaylist(
+	renditions []models.VideoRendition,
+	outputDir string,
+) error {
+
+	masterPath := filepath.Join(outputDir, "index.m3u8")
+
+	file, err := os.Create(masterPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	fmt.Fprintln(file, "#EXTM3U")
+	fmt.Fprintln(file, "#EXT-X-VERSION:3")
+
+	for _, rendition := range renditions {
+		fmt.Fprintf(
+			file,
+			"#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%dx%d\n",
+			rendition.Bitrate,
+			rendition.Width,
+			rendition.Height,
+		)
+
+		fmt.Fprintf(
+			file,
+			"%dp/index.m3u8\n",
+			rendition.Height,
+		)
+	}
+
+	return nil
 }
