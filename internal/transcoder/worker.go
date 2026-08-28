@@ -72,6 +72,10 @@ func (w *Worker) processVideo(video *models.Video) {
 
 	outputDir := "./processed/" + video.ID
 
+	if info, err := os.Stat(video.OriginalPath); err == nil {
+		video.OriginalSize = info.Size()
+	}
+
 	defer func() {
 		if err := os.Remove(video.OriginalPath); err != nil {
 			logger.Warn().Err(err).Str("videoID", video.ID).Msg("cleanup original failed")
@@ -102,8 +106,11 @@ func (w *Worker) processVideo(video *models.Video) {
 	if err := w.repo.CreateVideoProbe(probe); err != nil {
 		logger.Error().Err(err).Str("videoID", video.ID).Msg("failed to save video probe")
 	}
-	if err := w.repo.UpdateVideoDuration(video.ID,*probe.FormatDuration); err != nil {
-		logger.Error().Err(err).Str("videoID", video.ID).Msg("failed to save video duration")
+	if probe.FormatDuration != nil {
+		if err := w.repo.UpdateVideoDuration(video.ID, *probe.FormatDuration); err != nil {
+			logger.Error().Err(err).Str("videoID", video.ID).Msg("failed to save video duration")
+		}
+		video.DurationSeconds = *probe.FormatDuration
 	}
 
 	renditions := PlanRenditions(probe)
@@ -236,8 +243,8 @@ func (w *Worker) processVideo(video *models.Video) {
 	totalDur := time.Since(start)
 
 	logger.Info().
-		Str("OriginalSize", fmt.Sprintf("%v (%T)", video.OriginalSize, video.OriginalSize)).
-		Str("DurationSeconds", fmt.Sprintf("%v (%T)", video.DurationSeconds, video.DurationSeconds)).
+		Str("OriginalSize", fmt.Sprintf("%v ", video.OriginalSize)).
+		Str("DurationSeconds", fmt.Sprintf("%v ", video.DurationSeconds)).
 		Dur("transcode_time", transcodeDur).
 		Dur("upload_time", uploadDur).
 		Dur("db_time", dbDur).
