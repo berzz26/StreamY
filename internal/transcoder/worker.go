@@ -99,6 +99,13 @@ func (w *Worker) processVideo(video *models.Video) {
 
 	probe.VideoID = video.ID
 
+	if err := w.repo.CreateVideoProbe(probe); err != nil {
+		logger.Error().Err(err).Str("videoID", video.ID).Msg("failed to save video probe")
+	}
+	if err := w.repo.UpdateVideoDuration(video.ID,*probe.FormatDuration); err != nil {
+		logger.Error().Err(err).Str("videoID", video.ID).Msg("failed to save video duration")
+	}
+
 	renditions := PlanRenditions(probe)
 
 	logger.Info().
@@ -229,12 +236,14 @@ func (w *Worker) processVideo(video *models.Video) {
 	totalDur := time.Since(start)
 
 	logger.Info().
-		Str("videoID", video.ID).
+		Str("OriginalSize", fmt.Sprintf("%v (%T)", video.OriginalSize, video.OriginalSize)).
+		Str("DurationSeconds", fmt.Sprintf("%v (%T)", video.DurationSeconds, video.DurationSeconds)).
 		Dur("transcode_time", transcodeDur).
 		Dur("upload_time", uploadDur).
 		Dur("db_time", dbDur).
 		Dur("total_time", totalDur).
 		Msg("video processed successfully")
+
 }
 
 func CreateMasterPlaylist(
