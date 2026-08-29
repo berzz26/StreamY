@@ -10,6 +10,7 @@ import (
 	"github.com/berzz26/StreamY/internal/repository"
 	"github.com/berzz26/StreamY/internal/storage"
 
+	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 	"github.com/rs/zerolog"
 	"golang.org/x/sync/errgroup"
@@ -77,6 +78,35 @@ func (w *Worker) processVideo(video *models.Video) {
 		video.OriginalSize = info.Size()
 	}
 
+	run := models.Run{
+		ID:             uuid.New().String(),
+		VideoID:        video.ID,
+		OriginalSize:   video.OriginalSize,
+		StartedAt:      time.Now(),
+		RenditionTimes: map[string]int64{},
+	}
+
+	fail := func(errMessage string) {
+		run.Status = models.StatusFailed
+		run.ErrorMessage = errMessage
+	}
+
+	defer func() {
+		run.FinishedAt = time.Now()
+		run.TotalMS = run.FinishedAt.Sub(run.StartedAt).Milliseconds()
+
+		if run.Status == "" {
+			run.Status = models.StatusFailed
+		}
+
+		if err := w.repo.CreateRun(&run); err != nil {
+			logger.Error().
+				Err(err).
+				Str("videoID", video.ID).
+				Msg("failed to save pipeline run")
+		}
+	}()
+
 	defer func() {
 		if err := os.Remove(video.OriginalPath); err != nil {
 			logger.Warn().Err(err).Str("videoID", video.ID).Msg("cleanup original failed")
@@ -87,20 +117,27 @@ func (w *Worker) processVideo(video *models.Video) {
 		logger.Info().Str("videoID", video.ID).Msg("cleaned temp files")
 	}()
 
+	probeStart := time.Now()
+
 	probe, err := ProbeVideo(video.OriginalPath)
 
 	if err != nil {
+		run.ProbeMS = time.Since(probeStart).Milliseconds()
+
 		logger.Error().
 			Err(err).
 			Str("videoID", video.ID).
 			Msg("video probing failed")
 
+		fail(err.Error())
 		w.repo.MarkVideoFailed(
 			video.ID,
 			err.Error(),
 		)
 		return
 	}
+
+	run.ProbeMS = time.Since(probeStart).Milliseconds()
 
 	probe.VideoID = video.ID
 
@@ -112,9 +149,12 @@ func (w *Worker) processVideo(video *models.Video) {
 			logger.Error().Err(err).Str("videoID", video.ID).Msg("failed to save video duration")
 		}
 		video.DurationSeconds = *probe.FormatDuration
+		run.DurationSeconds = *probe.FormatDuration
 	}
 
 	renditions := PlanRenditions(probe)
+
+	run.RenditionsCount = len(renditions)
 
 	logger.Info().
 		Str("videoID", video.ID).
@@ -130,23 +170,30 @@ func (w *Worker) processVideo(video *models.Video) {
 		resDir := fmt.Sprintf("%dp", rendition.Height)
 		resolutionDir := filepath.Join(outputDir, resDir)
 
+		encodeStart := time.Now()
+
 		if err := EncodeRendition(
 			&rendition,
 			outputDir,
 			video.OriginalPath,
 		); err != nil {
+			run.RenditionTimes[fmt.Sprintf("%d", rendition.Height)] = time.Since(encodeStart).Milliseconds()
+
 			logger.Error().
 				Err(err).
 				Str("videoID", video.ID).
 				Msg("transcoding failed")
 
 			_ = g.Wait()
+			fail(err.Error())
 			w.repo.MarkVideoFailed(
 				video.ID,
 				err.Error(),
 			)
 			return
 		}
+
+		run.RenditionTimes[fmt.Sprintf("%d", rendition.Height)] = time.Since(encodeStart).Milliseconds()
 
 		g.Go(func() error {
 			return storage.UploadDirectory(
@@ -159,6 +206,8 @@ func (w *Worker) processVideo(video *models.Video) {
 	}
 
 	transcodeDur := time.Since(start)
+
+	run.TranscodeMS = transcodeDur.Milliseconds()
 
 	logger.Info().
 		Str("videoID", video.ID).
@@ -173,6 +222,7 @@ func (w *Worker) processVideo(video *models.Video) {
 			Str("videoID", video.ID).
 			Msg("minio upload failed")
 
+		fail(err.Error())
 		w.repo.MarkVideoFailed(
 			video.ID,
 			err.Error(),
@@ -181,6 +231,8 @@ func (w *Worker) processVideo(video *models.Video) {
 	}
 
 	uploadDur := time.Since(uploadStart)
+
+	run.UploadMS = uploadDur.Milliseconds()
 
 	logger.Info().
 		Str("videoID", video.ID).
@@ -193,6 +245,7 @@ func (w *Worker) processVideo(video *models.Video) {
 			Str("videoID", video.ID).
 			Msg("failed to create master playlist")
 
+		fail(err.Error())
 		w.repo.MarkVideoFailed(
 			video.ID,
 			err.Error(),
@@ -212,6 +265,7 @@ func (w *Worker) processVideo(video *models.Video) {
 			Str("videoID", video.ID).
 			Msg("failed to upload master playlist")
 
+		fail(err.Error())
 		w.repo.MarkVideoFailed(
 			video.ID,
 			err.Error(),
@@ -231,6 +285,8 @@ func (w *Worker) processVideo(video *models.Video) {
 
 	dbDur := time.Since(dbStart)
 
+	run.DbMS = dbDur.Milliseconds()
+
 	if err != nil {
 
 		logger.Error().
@@ -239,8 +295,12 @@ func (w *Worker) processVideo(video *models.Video) {
 			Dur("db_time", dbDur).
 			Msg("failed to update status")
 
+		fail(err.Error())
+
 		return
 	}
+
+	run.Status = models.StatusProcessed
 
 	totalDur := time.Since(start)
 
