@@ -12,6 +12,7 @@ import (
 
 	"github.com/minio/minio-go/v7"
 	"github.com/rs/zerolog"
+	"golang.org/x/sync/errgroup"
 )
 
 var logger = zerolog.New(
@@ -122,33 +123,70 @@ func (w *Worker) processVideo(video *models.Video) {
 
 	start := time.Now()
 
-	// err = ProcessVideo(
-	// 	video.OriginalPath,
-	// 	outputDir,
-	// )
+	var g errgroup.Group
 
 	for i := range renditions {
-		err = EncodeRendition(
-			&renditions[i],
+		rendition := renditions[i]
+		resDir := fmt.Sprintf("%dp", rendition.Height)
+		resolutionDir := filepath.Join(outputDir, resDir)
+
+		if err := EncodeRendition(
+			&rendition,
 			outputDir,
 			video.OriginalPath,
-		)
-
-		if err != nil {
+		); err != nil {
 			logger.Error().
 				Err(err).
 				Str("videoID", video.ID).
 				Msg("transcoding failed")
 
+			_ = g.Wait()
 			w.repo.MarkVideoFailed(
 				video.ID,
 				err.Error(),
 			)
 			return
 		}
+
+		g.Go(func() error {
+			return storage.UploadDirectory(
+				w.minio,
+				w.bucket,
+				resolutionDir,
+				"processed/"+video.ID+"/"+resDir,
+			)
+		})
 	}
 
 	transcodeDur := time.Since(start)
+
+	logger.Info().
+		Str("videoID", video.ID).
+		Dur("transcode_time", transcodeDur).
+		Msg("transcoding completed")
+
+	uploadStart := time.Now()
+
+	if err := g.Wait(); err != nil {
+		logger.Error().
+			Err(err).
+			Str("videoID", video.ID).
+			Msg("minio upload failed")
+
+		w.repo.MarkVideoFailed(
+			video.ID,
+			err.Error(),
+		)
+		return
+	}
+
+	uploadDur := time.Since(uploadStart)
+
+	logger.Info().
+		Str("videoID", video.ID).
+		Dur("upload_time", uploadDur).
+		Msg("uploaded assets to minio")
+
 	if err := CreateMasterPlaylist(renditions, outputDir); err != nil {
 		logger.Error().
 			Err(err).
@@ -162,62 +200,26 @@ func (w *Worker) processVideo(video *models.Video) {
 		return
 	}
 
-	if err != nil {
-
-		logger.Error().
-			Err(err).
-			Str("videoID", video.ID).
-			Dur("transcode_time", transcodeDur).
-			Msg("transcoding failed")
-
-		w.repo.MarkVideoFailed(
-			video.ID,
-			err.Error(),
-		)
-
-		return
-	}
-
-	logger.Info().
-		Str("videoID", video.ID).
-		Dur("transcode_time", transcodeDur).
-		Msg("transcoding completed")
-
-	uploadStart := time.Now()
-	processedPath := "processed/" + video.ID
-
-	err = storage.UploadDirectory(
+	if err := storage.UploadFile(
 		w.minio,
-
 		w.bucket,
-
-		outputDir,
-
-		processedPath,
-	)
-
-	uploadDur := time.Since(uploadStart)
-
-	if err != nil {
-
+		"processed/"+video.ID+"/index.m3u8",
+		filepath.Join(outputDir, "index.m3u8"),
+		"application/vnd.apple.mpegurl",
+	); err != nil {
 		logger.Error().
 			Err(err).
 			Str("videoID", video.ID).
-			Dur("upload_time", uploadDur).
-			Msg("minio upload failed")
+			Msg("failed to upload master playlist")
 
 		w.repo.MarkVideoFailed(
 			video.ID,
 			err.Error(),
 		)
-
 		return
 	}
 
-	logger.Info().
-		Str("videoID", video.ID).
-		Dur("upload_time", uploadDur).
-		Msg("uploaded assets to minio")
+	processedPath := "processed/" + video.ID
 
 	dbStart := time.Now()
 
