@@ -5,9 +5,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/berzz26/StreamY/internal/config"
 	"github.com/berzz26/StreamY/internal/models"
 	"github.com/berzz26/StreamY/internal/repository"
-	"github.com/berzz26/StreamY/internal/config"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -77,10 +77,10 @@ func (h *Handler) UploadVideo(
 	if err != nil {
 		return err
 	}
-	videoUrl := fmt.Sprintf("%s/stream/%s/index.m3u8",cfg.HostURL, videoID)
+	videoUrl := fmt.Sprintf("%s/?id=%s", cfg.HostURL, videoID)
 	return c.JSON(fiber.Map{
 		"video_id": videoID,
 		"status":   models.StatusUploaded,
-		"url" : videoUrl,
+		"url":      videoUrl,
 	})
 }
