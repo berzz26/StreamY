@@ -98,7 +98,7 @@ func EncodeRendition(rendition *models.VideoRendition, outputDir string, inputPa
 		"-map", "0:a:0?",
 
 		"-c:v", "h264_nvenc",
-		"-preset", "p5",
+		"-preset", "p4/fast",
 		"-b:v", fmt.Sprintf("%d", rendition.Bitrate),
 
 		"-c:a", "aac",
