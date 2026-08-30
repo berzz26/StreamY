@@ -28,7 +28,10 @@ func (h *Handler) RegisterRoutes(
 	app *fiber.App,
 ) {
 
-	app.Get("/", h.HealthCheck)
+	// Serve the player frontend at the root.
+	app.Static("/", "./web")
+
+	app.Get("/health", h.HealthCheck)
 
 	app.Get(
 		"/stream/:video/*",

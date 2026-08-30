@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StreamY Player</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13"></script>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #0f1115;
+      color: #e6e6e6;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    .wrap { width: min(960px, 92vw); }
+    h1 { font-weight: 600; font-size: 1.15rem; margin: 0 0 14px; }
+    video {
+      width: 100%;
+      background: #000;
+      border-radius: 8px;
+      display: block;
+    }
+    .meta {
+      margin-top: 10px;
+      font-size: 0.85rem;
+      color: #9aa0aa;
+    }
+    select {
+      margin-top: 12px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid #333;
+      background: #1a1d24;
+      color: #e6e6e6;
+    }
+    .error {
+      margin-top: 12px;
+      color: #ff6b6b;
+      font-size: 0.9rem;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>StreamY Player</h1>
+    <video id="video" controls playsinline></video>
+    <div>
+      <label for="quality">Quality: </label>
+      <select id="quality" disabled>
+        <option value="auto">Auto</option>
+      </select>
+    </div>
+    <div class="meta" id="meta"></div>
+    <div class="error" id="error"></div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const videoId = params.get('id') || '5a8f19e9-e4a7-4555-bdfc-0483ebd67cca';
+    const src = `/stream/${videoId}/index.m3u8`;
+
+    const video = document.getElementById('video');
+    const quality = document.getElementById('quality');
+    const meta = document.getElementById('meta');
+    const errorEl = document.getElementById('error');
+
+    function populate(levels) {
+      quality.length = 0;
+      const auto = document.createElement('option');
+      auto.value = -1; // -1 = auto in hls.js
+      auto.textContent = 'Auto';
+      quality.appendChild(auto);
+
+      levels.forEach((lv, i) => {
+        const opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = lv.height ? `${lv.height}p` : `Level ${i}`;
+        quality.appendChild(opt);
+      });
+      quality.disabled = false;
+      quality.value = -1;
+    }
+
+    if (Hls.isSupported()) {
+      const hls = new Hls({
+        enableWorker: true,
+        capLevelToPlayerSize: true,
+      });
+      hls.loadSource(src);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        video.play().catch(() => {});
+        populate(hls.levels);
+      });
+      hls.on(Hls.Events.LEVEL_SWITCHED, () => {
+        const lv = hls.levels[hls.currentLevel];
+        if (lv && lv.height) meta.textContent = `${lv.height}p`;
+      });
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        if (data.fatal) { errorEl.textContent = 'Failed to load stream: ' + src; }
+      });
+
+      quality.addEventListener('change', () => {
+        const v = parseInt(quality.value, 10);
+        hls.currentLevel = v === -1 ? -1 : v;
+      });
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Native HLS (Safari)
+      video.src = src;
+      video.addEventListener('loadedmetadata', () => meta.textContent = 'Native HLS');
+    } else {
+      errorEl.textContent = 'HLS is not supported in this browser.';
+    }
+  </script>
+</body>
+</html>
