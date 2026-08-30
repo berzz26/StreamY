@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
+	"time"
 
 	"github.com/berzz26/StreamY/internal/models"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -255,6 +257,69 @@ func (r *VideoRepository) UpdateVideoDuration(videoID string, duration float64) 
 		query,
 		duration,
 		videoID,
+	)
+
+	return err
+}
+
+
+func (r *VideoRepository) CreateRun(run *models.Run) error {
+
+	renditionTimes, err := json.Marshal(run.RenditionTimes)
+	if err != nil {
+		return err
+	}
+
+	if run.RenditionTimes == nil {
+		renditionTimes = []byte("{}")
+	}
+
+	query := `
+	INSERT INTO runs (
+		id,
+		video_id,
+		status,
+		error_message,
+		probe_ms,
+		transcode_ms,
+		upload_ms,
+		db_ms,
+		total_ms,
+		renditions_count,
+		rendition_times,
+		original_size,
+		duration_seconds,
+		started_at,
+		finished_at,
+		created_at
+	)
+	VALUES (
+		$1, $2, $3, $4, $5,
+		$6, $7, $8, $9, $10,
+		$11, $12, $13, $14, $15,
+		$16
+	)
+	`
+
+	_, err = r.db.Exec(
+		context.Background(),
+		query,
+		run.ID,
+		run.VideoID,
+		run.Status,
+		run.ErrorMessage,
+		run.ProbeMS,
+		run.TranscodeMS,
+		run.UploadMS,
+		run.DbMS,
+		run.TotalMS,
+		run.RenditionsCount,
+		renditionTimes,
+		run.OriginalSize,
+		run.DurationSeconds,
+		run.StartedAt,
+		run.FinishedAt,
+		time.Now(),
 	)
 
 	return err

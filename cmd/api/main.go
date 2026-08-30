@@ -23,7 +23,9 @@ func main() {
 	cfg := config.LoadConfig()
 	db := database.New(cfg.DatabaseUrl)
 	client, err := storage.NewMinioClient(*cfg)
-
+	if err != nil {
+		log.Fatalf("failed to initialize MinIO: %v", err)
+	}
 	defer db.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -40,7 +42,7 @@ func main() {
 	fmt.Println(version)
 
 	app := fiber.New(fiber.Config{
-		BodyLimit: 3 * 1024 * 1024 * 1024,
+		BodyLimit: 7 * 1024 * 1024 * 1024,
 
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
 

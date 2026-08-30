@@ -9,6 +9,7 @@ import (
 	"github.com/berzz26/StreamY/internal/config"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"golang.org/x/sync/errgroup"
 )
 
 func NewMinioClient(cfg config.Config) (*minio.Client, error) {
@@ -71,11 +72,46 @@ func UploadDirectory(
 	objectPrefix string,
 ) error {
 
-	return filepath.Walk(
+	type uploadJob struct {
+		path        string
+		objectName  string
+		contentType string
+	}
+
+	jobs := make(chan uploadJob)
+
+	var g errgroup.Group
+
+	// Start a fixed number of upload workers.
+	for i := 0; i < 4; i++ {
+		g.Go(func() error {
+			for job := range jobs {
+
+				_, err := client.FPutObject(
+					context.Background(),
+					bucket,
+					job.objectName,
+					job.path,
+					minio.PutObjectOptions{
+						ContentType: job.contentType,
+					},
+				)
+
+				if err != nil {
+					return err
+				}
+
+				log.Printf("uploaded %s", job.objectName)
+			}
+
+			return nil
+		})
+	}
+
+	// Discover files and feed them to workers.
+	walkErr := filepath.Walk(
 		localDir,
-
 		func(path string, info os.FileInfo, err error) error {
-
 			if err != nil {
 				return err
 			}
@@ -84,11 +120,7 @@ func UploadDirectory(
 				return nil
 			}
 
-			relativePath, err := filepath.Rel(
-				localDir,
-				path,
-			)
-
+			relativePath, err := filepath.Rel(localDir, path)
 			if err != nil {
 				return err
 			}
@@ -101,38 +133,27 @@ func UploadDirectory(
 			contentType := "application/octet-stream"
 
 			switch filepath.Ext(path) {
-
 			case ".m3u8":
 				contentType = "application/vnd.apple.mpegurl"
-
 			case ".ts":
 				contentType = "video/mp2t"
 			}
 
-			_, err = client.FPutObject(
-				context.Background(),
-
-				bucket,
-
-				objectName,
-
-				path,
-
-				minio.PutObjectOptions{
-					ContentType: contentType,
-				},
-			)
-
-			if err != nil {
-				return err
+			jobs <- uploadJob{
+				path:        path,
+				objectName:  objectName,
+				contentType: contentType,
 			}
-
-			log.Printf(
-				"uploaded %s",
-				objectName,
-			)
 
 			return nil
 		},
 	)
+
+	close(jobs)
+
+	if walkErr != nil {
+		return walkErr
+	}
+
+	return g.Wait()
 }
