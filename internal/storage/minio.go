@@ -13,22 +13,22 @@ import (
 )
 
 func NewMinioClient(cfg config.Config) (*minio.Client, error) {
+	transport, err := minio.DefaultTransport(cfg.MinioUseSSL)
+	if err != nil {
+		return nil, err
+	}
+	transport.MaxIdleConnsPerHost = 64
+	transport.MaxIdleConns = 128
 
 	client, err := minio.New(cfg.MinioEndpoint, &minio.Options{
-		Creds: credentials.NewStaticV4(
-			cfg.MinioAccessKey,
-			cfg.MinioSecretKey,
-			"",
-		),
-
-		Secure: cfg.MinioUseSSL,
+		Creds:     credentials.NewStaticV4(cfg.MinioAccessKey, cfg.MinioSecretKey, ""),
+		Secure:    cfg.MinioUseSSL,
+		Transport: transport,
 	})
-
 	if err != nil {
 		return nil, err
 	}
 	log.Printf("Connected to Minio")
-
 	return client, nil
 }
 func UploadFile(
@@ -83,7 +83,7 @@ func UploadDirectory(
 	var g errgroup.Group
 
 	// Start a fixed number of upload workers.
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 7; i++ {
 		g.Go(func() error {
 			for job := range jobs {
 
