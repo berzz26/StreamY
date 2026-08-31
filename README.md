@@ -1,20 +1,112 @@
-# StreamY — Project Structure Guide
+# StreamY — Concurrent Media Processing Pipeline
+
 ## Demo
-https://github.com/user-attachments/assets/4cc859d3-5c14-4a4f-a2ec-352b9c44d009
+
+[https://github.com/user-attachments/assets/4cc859d3-5c14-4a4f-a2ec-352b9c44d009](https://github.com/user-attachments/assets/4cc859d3-5c14-4a4f-a2ec-352b9c44d009)
+
+For the optimization process and to see before and after speeds, see the [optimization thread](https://x.com/berzzdotdev/status/2094271027174154309/video/1).
+
+---
+
 ## Overview
 
-StreamY is a backend-focused video streaming platform written in Go.
+StreamY is a backend-focused video processing and streaming system written in Go.
 
-The system handles:
+The goal of the project is to understand how video processing pipelines work and eventually build a distributed system capable of processing media workloads across multiple machines.
 
-* Video uploads
-* Transcoding using FFmpeg
-* HLS chunk generation
-* Multi-resolution streaming
-* HTTP delivery of video chunks
-* Background processing workers
+The current system takes an uploaded video, probes its metadata, dynamically plans the required renditions, encodes and segments those renditions into HLS, and stores the resulting streaming assets in MinIO.
 
-The architecture is intentionally designed similar to real-world production backend systems.
+The current focus is **single-machine media processing and optimization**. Distributed processing, worker scheduling, caching, and CDN/edge infrastructure are planned as later stages.
+
+---
+
+# Current Pipeline
+<img width="4074" height="1070" alt="streamy architecture" src="https://github.com/user-attachments/assets/44fadb52-079e-4fca-a029-31473ac4eeff" />
+
+
+Encoding is currently **sequential across renditions**, while object-storage uploads are performed concurrently. This was determined through benchmarking on the development machine.
+
+---
+
+# Performance
+
+The pipeline started as a simple CPU-based implementation and was progressively optimized.
+
+Test workload:
+
+```text
+Source size:       36,455,468 bytes (~36.5 MB)
+Duration:          34.709 seconds
+Source resolution: 1816 × 1080
+Frame rate:        30 FPS
+Source codec:      H.264
+Renditions:        1080p, 720p, 480p, 360p
+```
+
+Development hardware:
+
+```text
+CPU:       AMD Ryzen 5 5600H
+RAM:       16 GB
+GPU:       NVIDIA RTX 3050 Laptop GPU
+Encoder:   H.264 NVENC
+Storage:   MinIO
+Database:  PostgreSQL
+```
+
+### Optimization progression
+
+| Pipeline            |                      Total time | Main change                                   |
+| ------------------- | ------------------------------: | --------------------------------------------- |
+| CPU encoding        |             ~105,000 ms (~105s) | Initial implementation                        |
+| GPU encoding        |              50,213 ms (~50.2s) | H.264 NVENC                                   |
+| Concurrent uploads  |             ~19,116 ms (~19.1s) | Concurrent MinIO uploads                      |
+| Concurrent encoding | ~14,526–17,217 ms (~14.5–17.2s) | Parallel FFmpeg/NVENC                         |
+| **Current best**    |            **9,117 ms (~9.1s)** | Sequential encoding + concurrent uploads + p4 |
+
+The original CPU-based pipeline took roughly **1 minute 45 seconds** for the test video. Moving encoding to the RTX 3050 reduced this to approximately **50 seconds**.
+
+The major bottleneck then turned out not to be encoding, but object-storage uploads. The original sequential upload path took **41,690 ms (~41.7s)**. Introducing concurrent uploads reduced this to approximately **1,057 ms (~1.06s)** in the best run — roughly a **39× reduction in upload time**.
+
+The current best benchmark is:
+
+```text
+Probe:        112 ms
+Transcode:  7,371 ms
+Upload:     1,057 ms
+Database:       8 ms
+Total:      9,117 ms
+```
+
+This represents roughly an **11.5× reduction in total processing time** compared with the original CPU-based pipeline.
+
+---
+
+# Why Encoding Is Sequential
+
+The renditions are independent workloads, so they can theoretically be encoded concurrently.
+
+That was tested using Go's `errgroup` to run multiple FFmpeg processes simultaneously.
+
+However, on the RTX 3050 Laptop GPU, concurrent NVENC encoding did not improve the end-to-end pipeline.
+
+Parallel encoding reduced the transcode wall-clock time from roughly **7.3 seconds to ~6.7 seconds**, but upload time increased substantially, resulting in total processing times between approximately **14.5–17.2 seconds**.
+
+The best sequential configuration remained approximately **9.1 seconds**.
+
+This demonstrated an important distinction in the pipeline:
+
+```text
+GPU encoding
+    → compute/resource constrained
+    → more parallelism caused contention
+
+MinIO uploads
+    → I/O constrained
+    → concurrency significantly improved throughput
+```
+
+For the current hardware and workload, sequential rendition encoding is therefore faster overall.
 
 ---
 
@@ -44,9 +136,7 @@ streamy/
 
 Contains executable applications.
 
-Each folder inside `cmd/` becomes its own binary.
-
-This is standard production Go architecture.
+Each directory inside `cmd/` represents a separate executable.
 
 ---
 
@@ -58,22 +148,14 @@ cmd/api/main.go
 
 Main HTTP API server.
 
-Responsibilities:
+Responsibilities include:
 
-* Starts the HTTP server
-* Loads configuration
-* Connects to PostgreSQL
-* Initializes routes
-* Registers dependencies
-* Handles uploads and streaming APIs
-
-Example responsibilities:
-
-```text
-POST /upload
-GET  /videos/:id
-GET  /stream/:id/master.m3u8
-```
+* Starting the HTTP server
+* Loading configuration
+* Connecting to PostgreSQL
+* Initializing dependencies
+* Handling video upload requests
+* Exposing video and streaming endpoints
 
 ---
 
@@ -83,56 +165,40 @@ GET  /stream/:id/master.m3u8
 cmd/worker/main.go
 ```
 
-Background transcoding worker.
+Runs the background media-processing worker.
 
-Responsibilities:
+The worker claims videos that need processing and runs the media pipeline independently from the API server.
 
-* Picks transcoding jobs
-* Executes FFmpeg
-* Generates HLS chunks
-* Creates video variants
-* Updates processing status
-
-This process runs separately from the API.
-
-Why?
-
-Because transcoding is CPU intensive and should never block API requests.
+Keeping processing outside the API process prevents long-running FFmpeg workloads from blocking upload requests.
 
 ---
 
 # internal/
 
-Contains all private application logic.
-
-Anything inside `internal/` cannot be imported outside the module.
-
-This is where the real backend system lives.
+Contains the application's private business logic.
 
 ---
 
 # internal/config/
 
 ```text
-internal/config/config.go
+internal/config/
 ```
 
 Responsible for application configuration.
 
-Loads:
+Configuration includes things such as:
 
 ```env
 PORT=
 DATABASE_URL=
-STORAGE_PATH=
-FFMPEG_PATH=
+MINIO_ENDPOINT=
+MINIO_ACCESS_KEY=
+MINIO_SECRET_KEY=
+MINIO_BUCKET=
 ```
 
-Purpose:
-
-* Centralized config management
-* Environment variable loading
-* Avoid hardcoded values
+Configuration is kept outside the application code so the same application can run against different environments.
 
 ---
 
@@ -140,102 +206,141 @@ Purpose:
 
 ```text
 internal/database/
-    postgres.go
-    migrations/
 ```
 
-Responsible for database connectivity and schema management.
+Responsible for PostgreSQL connectivity and database migrations.
 
----
-
-## postgres.go
-
-Creates PostgreSQL connection pools.
-
-Responsibilities:
-
-* Connect to DB
-* Configure pooling
-* Verify connectivity
-
-Usually returns:
-
-```go
-*pgxpool.Pool
-```
-
----
-
-## migrations/
-
-Contains SQL schema migration files.
-
-Example:
-
-```sql
-001_create_videos_table.sql
-```
-
-Purpose:
-
-* Version controlled database schema
-* Easy reproducible setup
-* Production-safe DB changes
+PostgreSQL stores application metadata and media-processing metadata rather than the actual video segments.
 
 ---
 
 # internal/models/
 
 ```text
-internal/models/video.go
+internal/models/
 ```
 
-Contains pure domain structs.
+Contains the domain models used throughout the system.
 
-Example:
+Important models include:
 
-```go
-type Video struct {
-    ID string
-    Title string
-}
+```text
+Video
+VideoProbe
+VideoRendition
+VideoSegment
+Run
 ```
 
-Purpose:
+### Video
 
-* Shared data models
-* DB representations
-* API representations
-* Internal entity definitions
+Stores the primary metadata and processing state of a video.
 
-Important:
+```text
+id
+title
+status
+original_path
+original_size
+duration_seconds
+processed_path
+error_message
+created_at
+updated_at
+```
 
-Models should NOT contain business logic.
+### VideoProbe
+
+Stores metadata extracted from the original media using `ffprobe`.
+
+This includes information such as:
+
+* Container format
+* Duration
+* Bitrate
+* Video codec
+* Video profile
+* Resolution
+* Frame rate
+* Pixel format
+* Color information
+* Audio codec
+* Audio bitrate
+* Audio sample rate
+* Audio channels
+
+The probe information is kept separate from the main video record because it represents detailed media metadata rather than application state.
+
+### VideoRendition
+
+Represents a planned output representation of the source video.
+
+A rendition contains information such as:
+
+```text
+video_id
+width
+height
+bitrate
+frame rate
+```
+
+For example:
+
+```text
+1080p
+720p
+480p
+360p
+```
+
+The rendition planner determines which representations should be generated based on the source video's characteristics.
+
+### VideoSegment
+
+Represents an individual HLS media segment belonging to a rendition.
+
+It stores metadata such as:
+
+```text
+variant_id
+segment_index
+duration_seconds
+segment_path
+```
+
+This allows the database to describe the generated HLS structure without storing the actual media data inside PostgreSQL.
+
+### Run
+
+Stores timing and execution information for a media-processing run.
+
+It is used to benchmark individual pipeline stages and compare different implementations.
 
 ---
 
 # internal/repository/
 
 ```text
-internal/repository/video_repository.go
+internal/repository/
 ```
 
-Responsible for database queries.
+Responsible for database access.
 
-Purpose:
+The repository layer isolates SQL and persistence logic from the media-processing pipeline.
 
-* Isolate SQL logic
-* Separate persistence from business logic
+Typical operations include:
 
-Typical methods:
-
-```go
+```text
 CreateVideo()
 GetVideoByID()
-UpdateStatus()
+ClaimNextVideo()
+CreateVideoProbe()
+UpdateVideoDuration()
+UpdateVideoStatus()
+MarkVideoFailed()
+CreateRun()
 ```
-
-Repositories should ONLY interact with the database.
 
 ---
 
@@ -243,122 +348,56 @@ Repositories should ONLY interact with the database.
 
 ```text
 internal/storage/
-    local.go
-    paths.go
 ```
 
-Abstracts physical file storage.
+Contains the object-storage integration.
 
-Initially:
+StreamY currently uses **MinIO** as its S3-compatible object store.
 
-* Local filesystem
+The storage layer is responsible for:
 
-Later:
-
-* S3
-* MinIO
-* Cloud object storage
-
-Purpose:
-
-* Business logic should not care where files live
-* Easier migration to cloud storage later
+* Uploading individual files
+* Uploading directories
+* Determining content types
+* Uploading HLS playlists
+* Uploading HLS segments
+* Concurrent object uploads
 
 ---
 
-## local.go
+## Upload Pipeline
 
-Handles:
-
-* Save files
-* Read files
-* Delete files
-* Create directories
-
----
-
-## paths.go
-
-Centralizes storage path generation.
-
-Example:
+The original storage implementation uploaded every file sequentially:
 
 ```text
-/storage/originals/
-/storage/processed/
+segment_000.ts → MinIO
+                     ↓
+segment_001.ts → MinIO
+                     ↓
+segment_002.ts → MinIO
+                     ↓
+...
 ```
 
-Avoids path duplication throughout the project.
+This became the largest bottleneck after GPU encoding was introduced.
 
----
-
-# internal/upload/
+The current implementation uses a worker pool:
 
 ```text
-internal/upload/
-    handler.go
-    service.go
-    validator.go
+                    Upload Jobs
+                        │
+              ┌─────────┼─────────┐
+              ▼         ▼         ▼
+           Worker 1  Worker 2  Worker 3 ...
+              │         │         │
+              └─────────┼─────────┘
+                        ▼
+                      MinIO
 ```
 
-Responsible for the upload pipeline.
+The current benchmark uses **7 concurrent upload workers**, which produced the best result for the test environment.
 
-Flow:
-
-```text
-Upload request
-    ↓
-Validate file
-    ↓
-Save original video
-    ↓
-Insert DB record
-    ↓
-Queue transcoding job
-```
-
----
-
-## handler.go
-
-HTTP layer only.
-
-Responsibilities:
-
-* Parse multipart form
-* Read uploaded file
-* Return JSON response
-
-Should NOT contain business logic.
-
----
-
-## service.go
-
-Core upload workflow.
-
-Responsibilities:
-
-* Validation
-* File naming
-* File storage
-* DB insertion
-* Queue publishing
-
-This is where most upload logic lives.
-
----
-
-## validator.go
-
-Responsible for validating uploaded videos.
-
-Examples:
-
-* File type validation
-* MIME validation
-* Max file size
-* Extension checks
+The number is configurable and should not be considered universally optimal.
 
 ---
 
@@ -366,83 +405,147 @@ Examples:
 
 ```text
 internal/transcoder/
-    ffmpeg.go
-    hls.go
-    worker.go
-    job.go
 ```
 
-Core media processing system.
+Contains the core media-processing pipeline.
 
-This is the heart of StreamY.
+This is currently the most important part of StreamY.
+
+The package is responsible for:
+
+* Probing input media
+* Planning renditions
+* Encoding video
+* Generating HLS segments
+* Creating playlists
+* Measuring processing performance
+
+---
+
+## probe.go
+
+Uses `ffprobe` to inspect the source media before transcoding.
+
+The probe extracts structured JSON containing the source's format and stream metadata.
+
+This information is converted into the `VideoProbe` model and stored in PostgreSQL.
+
+The rendition planner then uses this information to make decisions about the output representations.
 
 ---
 
 ## ffmpeg.go
 
-Executes FFmpeg commands.
+Contains the FFmpeg execution logic.
 
-Responsibilities:
+The current encoding pipeline uses:
 
-* Video transcoding
-* Resolution conversion
-* Audio conversion
-* Segment generation
-
-Usually uses:
-
-```go
-exec.Command()
+```text
+CUDA
+  ↓
+NVENC
+  ↓
+H.264
+  ↓
+HLS
 ```
+
+The current NVENC configuration uses the `p4` preset after benchmarking it against `p5`.
 
 ---
 
-## hls.go
+## Rendition Planner
 
-Handles HLS-specific generation.
+The rendition planner takes the source video's characteristics and determines which resolutions should be generated.
 
-Responsibilities:
+The system currently supports resolutions up to 4K:
 
-* Playlist generation
-* Segment settings
-* Multi-resolution setup
-* Adaptive streaming logic
+```text
+2160p
+1440p
+1080p
+720p
+480p
+360p
+240p
+```
+
+Only resolutions that make sense for the source video are selected.
+
+For example, a 1080p source should not produce a 1440p or 2160p rendition.
+
+The planner also derives the appropriate width while preserving the source aspect ratio.
 
 ---
 
-## worker.go
+## Encoding
 
-Background worker loop.
+Each planned rendition is encoded using FFmpeg and generated into its own temporary directory:
 
-Responsibilities:
-
-* Listen for jobs
-* Process videos
-* Handle retries
-* Update statuses
-
-Example:
-
-```go
-for job := range queue {
-    process(job)
-}
+```text
+processed/
+└── <video-id>/
+    ├── 720p/
+    │   ├── index.m3u8
+    │   ├── segment_000.ts
+    │   ├── segment_001.ts
+    │   └── ...
+    │
+    ├── 480p/
+    │   ├── index.m3u8
+    │   └── ...
+    │
+    ├── 360p/
+    │   └── ...
+    │
+    └── 240p/
+        └── ...
 ```
+
+Each rendition has its own media playlist and segments.
+
+A master playlist is generated after the renditions have completed.
 
 ---
 
-## job.go
+# Processing Worker
 
-Defines transcoding job structures.
+The worker follows this general flow:
 
-Example:
-
-```go
-type Job struct {
-    VideoID string
-    InputPath string
-}
+```text
+Claim Video
+    │
+    ▼
+Probe Video
+    │
+    ▼
+Store Probe Metadata
+    │
+    ▼
+Plan Renditions
+    │
+    ▼
+Encode Renditions
+    │
+    ▼
+Generate HLS
+    │
+    ▼
+Upload Assets Concurrently
+    │
+    ▼
+Generate / Upload Master Playlist
+    │
+    ▼
+Update Video Status
+    │
+    ▼
+Delete Temporary Files
 ```
+
+The original uploaded video is currently kept only as temporary processing input. Once processing has successfully completed, the temporary source and local processed files are removed.
+
+The durable media assets are stored in MinIO.
 
 ---
 
@@ -450,209 +553,73 @@ type Job struct {
 
 ```text
 internal/streaming/
-    handler.go
-    service.go
 ```
 
-Responsible for video delivery.
+Responsible for serving the generated HLS assets.
 
-Serves:
+The streaming layer works with the generated playlists and segments rather than performing media processing itself.
 
-* .m3u8 playlists
-* .ts chunks
-* future MP4 range requests
-
----
-
-## handler.go
-
-HTTP layer.
-
-Routes:
+Typical requests include:
 
 ```text
-GET /stream/:id/master.m3u8
-GET /stream/:id/720/segment1.ts
+GET /stream/:videoID/index.m3u8
+GET /stream/:videoID/720p/index.m3u8
+GET /stream/:videoID/720p/segment_000.ts
 ```
 
----
-
-## service.go
-
-Streaming business logic.
-
-Responsibilities:
-
-* Locate playlist files
-* Locate chunks
-* Verify video exists
-* Handle streaming rules
-
-Later may include:
-
-* Signed URLs
-* Authorization
-* CDN headers
-* Cache control
+The generated master playlist allows an HLS client to select an appropriate rendition.
 
 ---
 
-# internal/queue/
+# internal/upload/
 
 ```text
-internal/queue/memory_queue.go
+internal/upload/
 ```
 
-Job queue system.
+Responsible for handling incoming video uploads.
 
-Initially:
-
-* In-memory Go channels
-
-Later:
-
-* Redis
-* RabbitMQ
-* Kafka
-
-Purpose:
-
-Decouple uploads from transcoding.
-
-Without queues:
-
-Uploads would block while FFmpeg runs.
-
----
-
-# internal/middleware/
+The general flow is:
 
 ```text
-internal/middleware/
-    logger.go
-    recovery.go
+Upload request
+      ↓
+Validate
+      ↓
+Store temporary source
+      ↓
+Create video record
+      ↓
+Worker processes video
 ```
 
-Reusable HTTP middleware.
-
----
-
-## logger.go
-
-Logs requests.
-
-Example:
-
-```text
-POST /upload 200 120ms
-```
-
----
-
-## recovery.go
-
-Prevents server crashes.
-
-Recovers from panics and returns proper HTTP errors.
-
-Critical in production APIs.
-
----
-
-# internal/utils/
-
-```text
-internal/utils/
-    file.go
-    response.go
-    errors.go
-```
-
-Shared helper utilities.
-
----
-
-## file.go
-
-Reusable file helper functions.
-
-Examples:
-
-* File extension helpers
-* File size helpers
-* Directory utilities
-
----
-
-## response.go
-
-Standardized API responses.
-
-Example:
-
-```json
-{
-  "success": true,
-  "data": {}
-}
-```
-
----
-
-## errors.go
-
-Shared custom errors.
-
-Purpose:
-
-* Reusable error definitions
-* Cleaner error handling
+The API does not perform the expensive FFmpeg work itself.
 
 ---
 
 # storage/
 
+The local filesystem is used only as temporary working storage during processing.
+
 ```text
 storage/
-    originals/
-    processed/
 ```
 
-Physical video storage.
+The uploaded source is temporarily stored locally, processed by FFmpeg, and removed after the resulting streaming assets have been persisted to MinIO.
+
+MinIO is the durable object store for generated HLS assets.
 
 ---
 
-## storage/originals/
-
-Stores raw uploaded videos.
-
-Example:
+# web/
 
 ```text
-/storage/originals/video123.mp4
+web/
 ```
 
-These files are the source material for transcoding.
+Contains the lightweight frontend/player used to test the streaming pipeline.
 
----
-
-## storage/processed/
-
-Stores generated streaming assets.
-
-Example:
-
-```text
-/storage/processed/video123/
-    master.m3u8
-    segment0.ts
-```
-
-Contains:
-
-* HLS playlists
-* Segments
-* Multi-resolution variants
+It is primarily a development and validation tool rather than the focus of the project.
 
 ---
 
@@ -660,245 +627,160 @@ Contains:
 
 ```text
 scripts/
-    dev.sh
-    ffmpeg_test.sh
 ```
 
-Developer utility scripts.
+Contains development and media-processing utility scripts.
 
----
-
-## dev.sh
-
-Used for local development automation.
-
-Examples:
-
-* Start API
-* Start worker
-* Run migrations
-
----
-
-## ffmpeg_test.sh
-
-Used for quickly testing FFmpeg commands.
-
-Useful during transcoding experimentation.
-
----
-
-# web/
-
-```text
-web/test-player/
-```
-
-Tiny frontend for testing playback.
-
-Not intended to be the final frontend.
-
-Purpose:
-
-* Verify streaming works
-* Test HLS playback
-* Debug chunk delivery
-
----
-
-## index.html
-
-Contains:
-
-```html
-<video controls>
-```
-
----
-
-## player.js
-
-Uses:
-
-* hls.js
-
-Loads:
-
-```text
-master.m3u8
-```
-
-for browser playback.
-
----
-
-# .env
-
-Environment variables.
-
-Example:
-
-```env
-PORT=8080
-DATABASE_URL=postgres://...
-FFMPEG_PATH=ffmpeg
-```
-
-Purpose:
-
-* Keep secrets/config outside code
-* Easier deployment
-
-Never commit this file.
-
----
-
-# .gitignore
-
-Specifies ignored files.
-
-Examples:
-
-```text
-.env
-storage/
-*.log
-bin/
-```
+These are useful for testing FFmpeg behavior and automating common development workflows.
 
 ---
 
 # docker-compose.yml
 
-Defines local infrastructure services.
+Used to run local infrastructure required by StreamY.
 
-Initially:
-
-* PostgreSQL
-
-Later:
-
-* Redis
-* MinIO
-* RabbitMQ
-
-Purpose:
-
-Easy local development environment.
-
----
-
-# go.mod
-
-Go module definition.
-
-Contains:
-
-* Module name
-* Dependencies
-* Versioning
-
-Equivalent to:
+The development environment currently uses services such as:
 
 ```text
-package.json
+PostgreSQL
+MinIO
 ```
 
-for Node.js.
+Additional infrastructure will be introduced as the system evolves toward distributed processing.
 
 ---
 
-# go.sum
+# Current Architecture
 
-Dependency checksum verification.
-
-Automatically managed by Go.
-
-Ensures:
-
-* Dependency integrity
-* Reproducible builds
-
----
-
-# Makefile
-
-Development command shortcuts.
-
-Example:
-
-```make
-run-api:
-	go run ./cmd/api
-
-run-worker:
-	go run ./cmd/worker
-```
-
-Purpose:
-
-* Faster workflows
-* Consistent commands
-* Production-like tooling
-
----
-
-# README.md
-
-Project documentation.
-
-Should include:
-
-* Setup instructions
-* Architecture overview
-* API docs
-* Development workflow
-* Deployment notes
-
----
-
-# Overall System Flow
+The current system is intentionally single-machine:
 
 ```text
-Client Uploads Video
-        ↓
-Upload Service
-        ↓
-Store Original File
-        ↓
-Create DB Record
-        ↓
-Queue Job
-        ↓
-Worker Picks Job
-        ↓
-FFmpeg Transcoding
-        ↓
-Generate HLS Chunks
-        ↓
-Store Processed Files
-        ↓
-Streaming Service Delivers Chunks
-        ↓
-Browser Plays Video
+                         ┌──────────────┐
+                         │   API Server │
+                         └──────┬───────┘
+                                │
+                                ▼
+                           PostgreSQL
+                                │
+                                │
+                         Video Processing
+                                │
+                                ▼
+                         ┌──────────────┐
+                         │    Worker    │
+                         └──────┬───────┘
+                                │
+                ┌───────────────┼───────────────┐
+                │               │               │
+                ▼               ▼               ▼
+             FFmpeg          FFmpeg          FFmpeg
+             NVENC           NVENC           NVENC
+                │               │               │
+                └───────────────┼───────────────┘
+                                │
+                         Concurrent Uploads
+                                │
+                                ▼
+                             MinIO
+```
+
+Encoding itself is currently sequential across renditions because concurrent NVENC workloads performed worse on the available GPU.
+
+The upload stage is concurrent because it is dominated by I/O and benefits significantly from multiple operations being in flight.
+
+---
+
+# Earlier Architecture
+
+The original implementation was much simpler:
+
+```text
+Upload
+  │
+  ▼
+Temporary Video
+  │
+  ▼
+CPU FFmpeg
+  │
+  ▼
+HLS
+  │
+  ▼
+Sequential MinIO Uploads
+  │
+  ▼
+PostgreSQL
+```
+
+There was initially no GPU acceleration, dynamic rendition planning, detailed probing, or concurrent upload worker pool.
+
+The original implementation took approximately:
+
+```text
+~105,000 ms
+(~1m45s)
+```
+
+for the test workload.
+
+The current optimized single-machine pipeline reaches:
+
+```text
+9,117 ms
+(~9.1s)
 ```
 
 ---
 
-# Long-Term Evolution
+# Design Direction
 
-Future additions may include:
+The current implementation is intentionally being treated as a **V1 single-machine media-processing pipeline**.
 
-* Authentication
-* CDN integration
-* Distributed transcoding
-* Edge streaming
-* Signed URLs
-* Analytics
-* Watch history
-* Live streaming
-* Subtitles
-* Recommendations
-* AI moderation
+The next stage of the project is to explore distributed media processing.
 
-The current structure is intentionally designed to scale into those systems cleanly.
+The long-term direction is to move from:
+
+```text
+                Single Worker
+                     │
+                  FFmpeg
+                     │
+                  MinIO
+```
+
+toward:
+
+```text
+                       Job Queue
+                           │
+             ┌─────────────┼─────────────┐
+             ▼             ▼             ▼
+          Worker A      Worker B      Worker C
+             │             │             │
+            GPU           GPU           GPU
+             │             │             │
+             └─────────────┼─────────────┘
+                           ▼
+                         MinIO
+```
+
+This will eventually allow StreamY to process multiple videos and/or independent media-processing jobs across multiple machines.
+
+Before introducing that complexity, the single-machine pipeline provides a measured baseline against which distributed implementations can be compared.
+
+---
+
+# Goals
+
+The project is being developed around a few core goals:
+
+* Understand video encoding and HLS processing
+* Build a production-style backend in Go
+* Understand where bottlenecks occur in media workloads
+* Benchmark before and after optimizations
+* Explore concurrency and parallelism
+* Build a distributed media-processing architecture
+* Eventually explore caching, CDN/edge delivery, scheduling, and fault tolerance
+
+The focus is not on building a complete end-to-end video platform immediately. The primary focus is **understanding and building the media-processing pipeline itself**, then scaling it from a single machine into a distributed system. 
