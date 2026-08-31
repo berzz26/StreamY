@@ -1,7 +1,7 @@
 # StreamY — Concurrent Media Processing Pipeline
 
 ## Demo 
-1.5x speed, the transcoding and final speeds are highlighted in the terminal and seek forward (at 1:02) to see the video player in action!
+**1.5x speed, the transcoding and final speeds are highlighted in the terminal and seek forward (at 1:02) to see the video player in action!**
 
 https://github.com/user-attachments/assets/a50c3e3a-62db-4641-8885-b1e521e63c22
 
