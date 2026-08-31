@@ -1,8 +1,9 @@
 # StreamY — Concurrent Media Processing Pipeline
 
-## Demo
+## Demo 
+1.5x speed, the transcoding and final speeds are highlighted in the terminal and seek forward (at 1:02) to see the video player in action!
 
-[https://github.com/user-attachments/assets/4cc859d3-5c14-4a4f-a2ec-352b9c44d009](https://github.com/user-attachments/assets/4cc859d3-5c14-4a4f-a2ec-352b9c44d009)
+https://github.com/user-attachments/assets/a50c3e3a-62db-4641-8885-b1e521e63c22
 
 For the optimization process and to see before and after speeds, see the [optimization thread](https://x.com/berzzdotdev/status/2094271027174154309/video/1).
 
